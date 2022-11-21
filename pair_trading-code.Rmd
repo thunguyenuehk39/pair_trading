@@ -1,0 +1,428 @@
+```{r}
+library("tseries")
+library("quantmod")
+library("PerformanceAnalytics")
+library("roll")
+library("urca")
+library(PairTrading)
+
+data <- read.csv('/Users/apple/Documents/thesis-Hong/datathesisagain2.txt',sep = ',')
+#data <- read.csv('/Users/apple/Documents/thesis-Hong/data-oneyear.csv',sep = ',')
+#data <- read.csv('data-covid-period.csv',sep = ',')
+data<- data[seq(dim(data)[1],1),] # reverse data index
+#data_chart <- ts(data[,2:10])
+data_chart <- xts(data[,2:10],order.by=as.Date(data[,1]))
+#VNM <- dailyReturn(data_chart[,1])  to calculate return from price
+colnames(data_chart) <- c("VNM","AFX","ANT","BLT","CMN","MSN","CEO","AGG","API")
+VNM <- data_chart[,1]
+AFX <- data_chart[,2]
+ANT <- data_chart[,3]
+BLT <- data_chart[,4]
+CMN <- data_chart[,5]
+MSN <- data_chart[,6]
+CEO <- data_chart[,7]
+AGG <- data_chart[,8]
+API <- data_chart[,9]
+plot(VNM)
+legend(x = "topleft",legend=colnames(data_chart))
+```
+
+```{r}
+return.data <- cbind(dailyReturn(VNM),dailyReturn(AFX),dailyReturn(ANT),dailyReturn(BLT),dailyReturn(CMN),dailyReturn(MSN),dailyReturn(CEO),dailyReturn(AGG),dailyReturn(API))
+colnames(return.data) <- c("VNM","AFX","ANT","BLT","CMN","MSN","CEO","AGG","API")
+cor(return.data)
+```
+
+```{r}
+IsStationary(VNM, 0.1)
+PP.test(as.numeric(VNM))
+adf.test(as.numeric(VNM))
+IsStationary(AFX, 0.1)
+PP.test(as.numeric(AFX))
+adf.test(as.numeric(AFX))
+IsStationary(ANT, 0.1)  # stationary
+PP.test(as.numeric(ANT))
+adf.test(as.numeric(ANT))
+IsStationary(BLT, 0.1)
+PP.test(as.numeric(BLT))
+adf.test(as.numeric(BLT))
+IsStationary(CMN, 0.1) # stationary
+PP.test(as.numeric(CMN))
+adf.test(as.numeric(CMN))
+IsStationary(MSN, 0.1)
+PP.test(as.numeric(MSN))
+adf.test(as.numeric(MSN))
+IsStationary(CEO, 0.1)
+PP.test(as.numeric(CEO))
+adf.test(as.numeric(CEO))
+IsStationary(AGG, 0.1)
+PP.test(as.numeric(AGG))
+adf.test(as.numeric(AGG))
+IsStationary(API, 0.1)
+PP.test(as.numeric(API))
+adf.test(as.numeric(API))
+```
+
+```{r}
+IsStationary(diff(VNM), 0.1)
+PP.test(as.numeric(diff(VNM)))
+adf.test(as.numeric(diff(VNM)))
+IsStationary(diff(AFX), 0.1) 
+PP.test(as.numeric(diff(AFX)))
+adf.test(as.numeric(diff(AFX)))
+IsStationary(diff(BLT), 0.1) # have co-integration
+PP.test(as.numeric(diff(BLT)))
+adf.test(as.numeric(diff(BLT)))
+IsStationary(diff(MSN), 0.1) # have co-integration
+PP.test(as.numeric(diff(MSN)))
+adf.test(as.numeric(diff(MSN)))
+IsStationary(diff(CEO), 0.1)
+PP.test(as.numeric(diff(CEO)))
+adf.test(as.numeric(diff(CEO)))
+IsStationary(diff(AGG), 0.1) # have co-integration
+PP.test(as.numeric(diff(AGG)))
+adf.test(as.numeric(diff(AGG)))
+IsStationary(diff(API), 0.1)
+PP.test(as.numeric(diff(API)))
+adf.test(as.numeric(diff(API)))
+```
+
+```{r}
+#VNM and AFX
+VNM.AFX <- lm(VNM ~ AFX)
+intb1 <- VNM.AFX$coefficients[2]
+intercept <-  VNM.AFX$coefficients[1]
+intsp1 <- VNM- (intb1*AFX + intercept)
+plot(intsp1,main="VNM-AFX Spread")
+abline(h=mean(intsp1),col="blue")
+IsStationary(intsp1, 0.1)
+PP.test(as.numeric(intsp1))
+adf.test(as.numeric(intsp1))
+# VNM-AFX Rolling Spread Calculation
+rlmint1 <- roll_lm(y=VNM, x=AFX ,intercept=TRUE,width=50)
+rintb1 <- rlmint1$coefficients[,2]
+plot(rintb1,main="VNM-AFX Rolling Beta")
+abline(h=intb1,col="blue")
+rintsp1 <- VNM-rintb1*AFX
+
+# VNM-AFX Rolling Spread Z-Score
+rintz1 <- roll_scale(rintsp1,width=63)
+plot(rintz1,main="VNM-AFX Rolling Spread Z-Score")
+abline(h=-2,col="green")
+abline(h=-1,col="green",lty=2)
+abline(h=2,col="red")
+abline(h=1,col="red",lty=2)
+
+# VNM-AFX Trading Strategy Signals 
+intsig1 <- Lag(ifelse(Lag(rintz1)>(-2)&rintz1<(-2),-2,
+                      ifelse(Lag(rintz1)<(-1)&rintz1>(-1),-1,
+                             ifelse(Lag(rintz1)<2&rintz1>2,2,
+                                    ifelse(Lag(rintz1)>1&rintz1<1,1,0)))))
+intsig1[is.na(intsig1)] <- 0
+
+# VNM-AFX Trading Strategy Positions
+intpos1 <- ifelse(intsig1>2,1,0)
+for(i in 1:length(rintz1)){intpos1[i] <- ifelse(intsig1[i]==-2,1,
+                                                ifelse(intsig1[i]==-1,0,
+                                                       ifelse(intsig1[i]==2,-1,
+                                                              ifelse(intsig1[i]==1,0,intpos1[i-1]))))}
+intpos1[is.na(intpos1)] <- 0
+inttr1 <- cbind(rintz1,intsig1,intpos1)
+colnames(inttr1) <- c("rintz1","intsig1","intpos1")
+
+#VNM.return <- dailyReturn(VNM)
+#AFX.return <- dailyReturn(AFX)
+VNM.return <- periodReturn(VNM)
+AFX.return <- periodReturn(AFX)
+# 5.1.1. AUS-CAN Pair Strategy Performance Comparison
+intspret1 <- VNM.return-rintb1*AFX.return
+intret1 <- intpos1*intspret1
+intret1c <- ifelse((intsig1==-2|intsig1==-1|intsig1==2|intsig1==1)&intpos1!=Lag(intpos1),(intspret1*intpos1)-0.001,intspret1*intpos1)
+intcomp1 <- cbind(intret1,intret1c,VNM.return ,AFX.return)
+colnames(intcomp1) <- c("intret1","intret1c","VNM.return","AFX.return")
+table.AnnualizedReturns(intcomp1)
+charts.PerformanceSummary(intcomp1)
+```
+
+```{r}
+#VNM and BLT
+VNM.BLT <- lm(VNM~BLT)
+intb1 <- VNM.BLT$coefficients[2]
+intercept <- VNM.BLT$coefficients[1]
+intsp1 <- VNM- (intb1*BLT + intercept)
+plot(intsp1,main="VNM-BLT Spread")
+abline(h=mean(intsp1),col="blue")
+IsStationary(intsp1, 0.1)
+PP.test(as.numeric(intsp1))
+adf.test(as.numeric(intsp1))
+# VNM-BLT Rolling Spread Calculation
+rlmint1 <- roll_lm(y=VNM, x=BLT ,intercept=TRUE,width=30)
+rintb1 <- rlmint1$coefficients[,2]
+intercept2 <- rlmint1$coefficients[,1]
+plot(rintb1,main="VNM-BLT Rolling Beta")
+abline(h=intb1,col="blue")
+rintsp1 <- VNM - (rintb1*BLT + intercept2)
+
+# VNM-BLT Rolling Spread Z-Score
+rintz1 <- roll_scale(rintsp1,width=30)
+plot(rintz1,main="VNM-BLT Rolling Spread Z-Score")
+abline(h=-2,col="green")
+abline(h=-1,col="green",lty=2)
+abline(h=2,col="red")
+abline(h=1,col="red",lty=2)
+
+# VNM-BLT Trading Strategy Signals 
+intsig1 <- Lag(ifelse(Lag(rintz1)>(-2)&rintz1<(-2),-2,
+                      ifelse(Lag(rintz1)<(-1)&rintz1>(-1),-1,
+                             ifelse(Lag(rintz1)<2&rintz1>2,2,
+                                    ifelse(Lag(rintz1)>1&rintz1<1,1,0)))))
+intsig1[is.na(intsig1)] <- 0
+
+# VNM-BLT Trading Strategy Positions
+intpos1 <- ifelse(intsig1>2,1,0)
+for(i in 1:length(rintz1)){intpos1[i] <- ifelse(intsig1[i]==-2,1,
+                                                ifelse(intsig1[i]==-1,0,
+                                                       ifelse(intsig1[i]==2,-1,
+                                                              ifelse(intsig1[i]==1,0,intpos1[i-1]))))}
+intpos1[is.na(intpos1)] <- 0
+inttr1 <- cbind(rintz1,intsig1,intpos1)
+colnames(inttr1) <- c("rintz1","intsig1","intpos1")
+
+VNM.return <- dailyReturn(VNM)
+BLT.return <- dailyReturn(BLT)
+
+# 5.1.1. VNM-BLT Pair Strategy Performance Comparison
+intspret1 <- VNM.return-rintb1*BLT.return
+intret1 <- intpos1*intspret1
+intret1c <- ifelse((intsig1==-2|intsig1==-1|intsig1==2|intsig1==1)&intpos1!=Lag(intpos1),(intspret1*intpos1)-0.001,intspret1*intpos1)
+intcomp1 <- cbind(intret1,VNM.return ,BLT.return)
+colnames(intcomp1) <- c("VNM.BLT pair","VNM.return","BLT.return")
+table.AnnualizedReturns(intcomp1)
+charts.PerformanceSummary(intcomp1)
+```
+
+```{r}
+#VNM and MSN
+VNM.MSN <- lm(VNM~ MSN)
+intb1 <- VNM.MSN$coefficients[2]
+intercept <- VNM.MSN$coefficients[1]
+intsp1 <- VNM - (intb1*MSN + intercept)
+plot(intsp1 ,main="VNM-MSN Spread")
+abline(h=mean(intsp1),col="blue")
+IsStationary(intsp1, 0.1)
+PP.test(as.numeric(intsp1))
+adf.test(as.numeric(intsp1))
+# VNM-MSN Rolling Spread Calculation
+rlmint1 <- roll_lm(y=VNM, x=MSN ,intercept=TRUE,width=30)
+intercept2 <- rlmint1$coefficients[,1]
+rintb1 <- rlmint1$coefficients[,2]
+plot(rintb1,main="VNM-MSN Rolling Beta")
+abline(h=intb1,col="blue")
+rintsp1 <- VNM- (rintb1*MSN + intercept2)
+
+# VNM-MSN Rolling Spread Z-Score
+rintz1 <- roll_scale(rintsp1,width=30)
+plot(rintz1,main="VNM-MSN Rolling Spread Z-Score")
+abline(h=-2,col="green")
+abline(h=-1,col="green",lty=2)
+abline(h=2,col="red")
+abline(h=1,col="red",lty=2)
+
+# VNM-MSN Trading Strategy Signals 
+intsig1 <- Lag(ifelse(Lag(rintz1)>(-2)&rintz1<(-2),-2,
+                      ifelse(Lag(rintz1)<(-1)&rintz1>(-1),-1,
+                             ifelse(Lag(rintz1)<2&rintz1>2,2,
+                                    ifelse(Lag(rintz1)>1&rintz1<1,1,0)))))
+intsig1[is.na(intsig1)] <- 0
+
+# VNM-MSN Trading Strategy Positions
+intpos1 <- ifelse(intsig1>2,1,0)
+for(i in 1:length(rintz1)){intpos1[i] <- ifelse(intsig1[i]==-2,1,
+                                                ifelse(intsig1[i]==-1,0,
+                                                       ifelse(intsig1[i]==2,-1,
+                                                              ifelse(intsig1[i]==1,0,intpos1[i-1]))))}
+intpos1[is.na(intpos1)] <- 0
+inttr1 <- cbind(rintz1,intsig1,intpos1)
+colnames(inttr1) <- c("rintz1","intsig1","intpos1")
+
+VNM.return <- dailyReturn(VNM)
+MSN.return <- dailyReturn(MSN)
+# 5.1.1. VNM-MSN Pair Strategy Performance Comparison
+intspret1 <- VNM.return-rintb1*MSN.return
+intret1 <- intpos1*intspret1
+intret1c <- ifelse((intsig1==-2|intsig1==-1|intsig1==2|intsig1==1)&intpos1!=Lag(intpos1),(intspret1*intpos1)-0.001,intspret1*intpos1)
+intcomp1 <- cbind(intret1,VNM.return ,MSN.return)
+colnames(intcomp1) <- c("VNM.MSN pair","VNM.return","MSN.return")
+table.AnnualizedReturns(intcomp1)
+charts.PerformanceSummary(intcomp1)
+```
+
+```{r}
+#VNM and CEO
+VNM.CEO <- lm(VNM~ CEO)
+intb1 <- VNM.CEO$coefficients[2]
+intercept <- VNM.CEO$coefficients[1]
+intsp1 <- VNM - (intb1*CEO + intercept)
+plot(intsp1,main="VNM-CEO Spread")
+abline(h=mean(intsp1),col="blue")
+IsStationary(intsp1, 0.1)
+PP.test(as.numeric(intsp1))
+adf.test(as.numeric(intsp1))
+# VNM-MSN Rolling Spread Calculation
+rlmint1 <- roll_lm(y=VNM, x=CEO ,intercept=TRUE,width=50)
+rintb1 <- rlmint1$coefficients[,2]
+plot(rintb1,main="VNM-CEO Rolling Beta")
+abline(h=intb1,col="blue")
+rintsp1 <- VNM-rintb1*CEO
+
+# VNM-MSN Rolling Spread Z-Score
+rintz1 <- roll_scale(rintsp1,width=63)
+plot(rintz1,main="VNM-CEO Rolling Spread Z-Score")
+abline(h=-2,col="green")
+abline(h=-1,col="green",lty=2)
+abline(h=2,col="red")
+abline(h=1,col="red",lty=2)
+
+# VNM-MSN Trading Strategy Signals 
+intsig1 <- Lag(ifelse(Lag(rintz1)>(-2)&rintz1<(-2),-2,
+                      ifelse(Lag(rintz1)<(-1)&rintz1>(-1),-1,
+                             ifelse(Lag(rintz1)<2&rintz1>2,2,
+                                    ifelse(Lag(rintz1)>1&rintz1<1,1,0)))))
+intsig1[is.na(intsig1)] <- 0
+
+# VNM-MSN Trading Strategy Positions
+intpos1 <- ifelse(intsig1>2,1,0)
+for(i in 1:length(rintz1)){intpos1[i] <- ifelse(intsig1[i]==-2,1,
+                                                ifelse(intsig1[i]==-1,0,
+                                                       ifelse(intsig1[i]==2,-1,
+                                                              ifelse(intsig1[i]==1,0,intpos1[i-1]))))}
+intpos1[is.na(intpos1)] <- 0
+inttr1 <- cbind(rintz1,intsig1,intpos1)
+colnames(inttr1) <- c("rintz1","intsig1","intpos1")
+
+VNM.return <- dailyReturn(VNM)
+CEO.return <- dailyReturn(CEO)
+# 5.1.1. VNM-MSN Pair Strategy Performance Comparison
+intspret1 <- VNM.return-rintb1*CEO.return
+intret1 <- intpos1*intspret1
+intret1c <- ifelse((intsig1==-2|intsig1==-1|intsig1==2|intsig1==1)&intpos1!=Lag(intpos1),(intspret1*intpos1)-0.001,intspret1*intpos1)
+intcomp1 <- cbind(intret1,intret1c,VNM.return ,CEO.return)
+colnames(intcomp1) <- c("intret1","intret1c","VNM.return","CEO.return")
+table.AnnualizedReturns(intcomp1)
+charts.PerformanceSummary(intcomp1)
+```
+
+```{r}
+#VNM and AGG
+VNM.AGG <- lm(VNM~ AGG)
+intb1 <- VNM.AGG$coefficients[2]
+intercept <- VNM.AGG$coefficients[1]
+intsp1 <- VNM - (intb1*AGG + intercept)
+plot(intsp1,main="VNM-AGG Spread")
+abline(h=mean(intsp1),col="blue")
+#IsStationary(intsp1, 0.1)
+PP.test(as.numeric(intsp1))
+adf.test(as.numeric(intsp1))
+
+# VNM-MSN Rolling Spread Calculation
+rlmint1 <- roll_lm(y=VNM, x=AGG ,intercept=TRUE,width=30)
+rintb1 <- rlmint1$coefficients[,2]
+intercept2 <- rlmint1$coefficients[,1]
+plot(rintb1,main="VNM-AGG Rolling Beta")
+abline(h=intb1,col="blue")
+rintsp1 <- VNM-(rintb1*AGG + intercept2)
+#rintsp1 <- VNM - intb1*AGG 
+
+# VNM-MSN Rolling Spread Z-Score
+rintz1 <- roll_scale(rintsp1,width=30)
+plot(rintz1,main="VNM-AGG Rolling Spread Z-Score")
+abline(h=-2,col="green")
+abline(h=-1,col="green",lty=2)
+abline(h=2,col="red")
+abline(h=1,col="red",lty=2)
+
+# VNM-MSN Trading Strategy Signals 
+intsig1 <- Lag(ifelse(Lag(rintz1)>(-2)&rintz1<(-2),-2,
+                      ifelse(Lag(rintz1)<(-1)&rintz1>(-1),-1,
+                             ifelse(Lag(rintz1)<2&rintz1>2,2,
+                                    ifelse(Lag(rintz1)>1&rintz1<1,1,0)))))
+intsig1[is.na(intsig1)] <- 0
+
+# VNM-MSN Trading Strategy Positions
+intpos1 <- ifelse(intsig1>2,1,0)
+for(i in 1:length(rintz1)){intpos1[i] <- ifelse(intsig1[i]==-2,1,
+                                                ifelse(intsig1[i]==-1,0,
+                                                       ifelse(intsig1[i]==2,-1,
+                                                              ifelse(intsig1[i]==1,0,intpos1[i-1]))))}
+intpos1[is.na(intpos1)] <- 0
+inttr1 <- cbind(rintz1,intsig1,intpos1)
+colnames(inttr1) <- c("rintz1","intsig1","intpos1")
+
+VNM.return <- dailyReturn(VNM)
+AGG.return <- dailyReturn(AGG)
+# 5.1.1. VNM-MSN Pair Strategy Performance Comparison
+intspret1 <- VNM.return-rintb1*AGG.return
+intret1 <- intpos1*intspret1
+intret1c <- ifelse((intsig1==-2|intsig1==-1|intsig1==2|intsig1==1)&intpos1!=Lag(intpos1),(intspret1*intpos1)-0.001,intspret1*intpos1)
+intcomp1 <- cbind(intret1,VNM.return ,AGG.return)
+colnames(intcomp1) <- c("VNM.AGG pair","VNM.return","AGG.return")
+table.AnnualizedReturns(intcomp1)
+charts.PerformanceSummary(intcomp1)
+```
+
+```{r}
+#VNM and API
+VNM.API <- lm(VNM~ API)
+intb1 <- VNM.API$coefficients[2]
+intercept <- VNM.API$coefficients[1]
+intsp1 <- VNM - (intb1*API + intercept)
+plot(intsp1,main="VNM-API Spread")
+abline(h=mean(intsp1),col="blue")
+IsStationary(intsp1, 0.1)
+PP.test(as.numeric(intsp1))
+adf.test(as.numeric(intsp1))
+# VNM-API Rolling Spread Calculation
+rlmint1 <- roll_lm(y=VNM, x=API ,intercept=TRUE,width=50)
+rintb1 <- rlmint1$coefficients[,2]
+plot(rintb1,main="VNM-API Rolling Beta")
+abline(h=intb1,col="blue")
+rintsp1 <- VNM-rintb1*API
+
+# VNM-API Rolling Spread Z-Score
+rintz1 <- roll_scale(rintsp1,width=63)
+plot(rintz1,main="VNM-API Rolling Spread Z-Score")
+abline(h=-2,col="green")
+abline(h=-1,col="green",lty=2)
+abline(h=2,col="red")
+abline(h=1,col="red",lty=2)
+
+# VNM-API Trading Strategy Signals 
+intsig1 <- Lag(ifelse(Lag(rintz1)>(-2)&rintz1<(-2),-2,
+                      ifelse(Lag(rintz1)<(-1)&rintz1>(-1),-1,
+                             ifelse(Lag(rintz1)<2&rintz1>2,2,
+                                    ifelse(Lag(rintz1)>1&rintz1<1,1,0)))))
+intsig1[is.na(intsig1)] <- 0
+
+# VNM-API Trading Strategy Positions
+intpos1 <- ifelse(intsig1>2,1,0)
+for(i in 1:length(rintz1)){intpos1[i] <- ifelse(intsig1[i]==-2,1,
+                                                ifelse(intsig1[i]==-1,0,
+                                                       ifelse(intsig1[i]==2,-1,
+                                                              ifelse(intsig1[i]==1,0,intpos1[i-1]))))}
+intpos1[is.na(intpos1)] <- 0
+inttr1 <- cbind(rintz1,intsig1,intpos1)
+colnames(inttr1) <- c("rintz1","intsig1","intpos1")
+
+VNM.return <- dailyReturn(VNM)
+API.return <- dailyReturn(API)
+# 5.1.1. VNM-API Pair Strategy Performance Comparison
+intspret1 <- VNM.return-rintb1*API.return
+intret1 <- intpos1*intspret1
+intret1c <- ifelse((intsig1==-2|intsig1==-1|intsig1==2|intsig1==1)&intpos1!=Lag(intpos1),(intspret1*intpos1)-0.001,intspret1*intpos1)
+intcomp1 <- cbind(intret1,intret1c,VNM.return ,API.return)
+colnames(intcomp1) <- c("intret1","intret1c","VNM.return","API.return")
+table.AnnualizedReturns(intcomp1)
+charts.PerformanceSummary(intcomp1)
+```
+
+
